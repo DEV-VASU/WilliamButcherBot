@@ -730,7 +730,7 @@ async def tmdb_func(answers, query):
 
 async def image_func(answers, query):
     results = await arq.image(query)
-    if not results.ok:
+    if results.ok:
         answers.append(
             InlineQueryResultArticle(
                 title="Error",

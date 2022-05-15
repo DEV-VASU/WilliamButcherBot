@@ -60,6 +60,7 @@ __HELP__ = """/ban - Ban A User
 /kick - Kick A User
 /dkick - Delete the replied message kicking its sender
 /purge - Purge Messages
+/purge [n] - Purge "n" number of messages from replied message
 /del - Delete Replied Message
 /promote - Promote A Member
 /fullpromote - Promote A Member With All Rights
@@ -124,29 +125,6 @@ async def list_admins(chat_id: int):
     return admins_in_chat[chat_id]["data"]
 
 
-async def current_chat_permissions(chat_id):
-    perms = []
-    perm = (await app.get_chat(chat_id)).permissions
-    if perm.can_send_messages:
-        perms.append("can_send_messages")
-    if perm.can_send_media_messages:
-        perms.append("can_send_media_messages")
-    if perm.can_send_other_messages:
-        perms.append("can_send_other_messages")
-    if perm.can_add_web_page_previews:
-        perms.append("can_add_web_page_previews")
-    if perm.can_send_polls:
-        perms.append("can_send_polls")
-    if perm.can_change_info:
-        perms.append("can_change_info")
-    if perm.can_invite_users:
-        perms.append("can_invite_users")
-    if perm.can_pin_messages:
-        perms.append("can_pin_messages")
-
-    return perms
-
-
 # Admin cache reload
 
 
@@ -171,17 +149,26 @@ async def admin_cache_func(_, cmu: ChatMemberUpdated):
 @app.on_message(filters.command("purge") & ~filters.edited & ~filters.private)
 @adminsOnly("can_delete_messages")
 async def purgeFunc(_, message: Message):
+    repliedmsg = message.reply_to_message
     await message.delete()
 
-    if not message.reply_to_message:
+    if not repliedmsg:
         return await message.reply_text("Reply to a message to purge from.")
+
+    cmd = message.command
+    if len(cmd) > 1 and cmd[1].isdigit():
+        purge_to = repliedmsg.message_id + int(cmd[1])
+        if purge_to > message.message_id:
+            purge_to = message.message_id
+    else:
+        purge_to = message.message_id   
 
     chat_id = message.chat.id
     message_ids = []
 
     for message_id in range(
-            message.reply_to_message.message_id,
-            message.message_id,
+            repliedmsg.message_id,
+            purge_to,
     ):
         message_ids.append(message_id)
 
@@ -519,7 +506,11 @@ async def unmute(_, message: Message):
 # Ban deleted accounts
 
 
-@app.on_message(filters.command("ban_ghosts") & ~filters.private)
+@app.on_message(
+    filters.command("ban_ghosts")
+    & ~filters.private
+    & ~filters.edited
+)
 @adminsOnly("can_restrict_members")
 async def ban_deleted_accounts(_, message: Message):
     chat_id = message.chat.id
@@ -679,16 +670,26 @@ async def report_user(_, message):
             "Reply to a message to report that user."
         )
 
-    if message.reply_to_message.from_user.id == message.from_user.id:
+    reply = message.reply_to_message
+    reply_id = reply.from_user.id if reply.from_user else reply.sender_chat.id
+    user_id = message.from_user.id if message.from_user else message.sender_chat.id
+    if reply_id == user_id:
         return await message.reply_text("Why are you reporting yourself ?")
 
     list_of_admins = await list_admins(message.chat.id)
-    if message.reply_to_message.from_user.id in list_of_admins:
-        return await message.reply_text(
-            "Do you know that the user you are replying is an admin ?"
-        )
+    linked_chat = (await app.get_chat(message.chat.id)).linked_chat
+    if linked_chat is not None:
+        if reply_id in list_of_admins or reply_id == message.chat.id or reply_id == linked_chat.id:
+            return await message.reply_text(
+                "Do you know that the user you are replying is an admin ?"
+            )
+    else:
+        if reply_id in list_of_admins or reply_id == message.chat.id:
+            return await message.reply_text(
+                "Do you know that the user you are replying is an admin ?"
+            )
 
-    user_mention = message.reply_to_message.from_user.mention
+    user_mention = reply.from_user.mention if reply.from_user else reply.sender_chat.title
     text = f"Reported {user_mention} to admins!"
     admin_data = await app.get_chat_members(
         chat_id=message.chat.id, filter="administrators"

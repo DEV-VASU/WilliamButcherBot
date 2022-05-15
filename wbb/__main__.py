@@ -24,8 +24,9 @@ SOFTWARE.
 import asyncio
 import importlib
 import re
+from contextlib import closing, suppress
 
-import uvloop
+from uvloop import install
 from pyrogram import filters, idle
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -168,7 +169,7 @@ keyboard = InlineKeyboardMarkup(
 )
 
 
-@app.on_message(filters.command("start"))
+@app.on_message(~filters.edited & filters.command("start"))
 async def start(_, message):
     if message.chat.type != "private":
         return await message.reply(
@@ -201,7 +202,7 @@ async def start(_, message):
     return
 
 
-@app.on_message(filters.command("help"))
+@app.on_message(~filters.edited & filters.command("help"))
 async def help_command(_, message):
     if message.chat.type != "private":
         if len(message.command) >= 2:
@@ -373,12 +374,8 @@ General command are:
 
 
 if __name__ == "__main__":
-    uvloop.install()
-    try:
-        try:
+    install()
+    with closing(loop):
+        with suppress(asyncio.exceptions.CancelledError):
             loop.run_until_complete(start_bot())
-        except asyncio.exceptions.CancelledError:
-            pass
         loop.run_until_complete(asyncio.sleep(3.0))  # task cancel wait
-    finally:
-        loop.close()
